@@ -1,8 +1,8 @@
-const CACHE_NAME = 'diff-cache-v1.0.0';
+const CACHE_NAME = 'diff-cache-v1.0.1';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './styles.css?h=e5ef9486',
+  './styles.css?h=85bf58d9',
   './app.js?h=24423efd',
   './diff.js?h=52ba9aad',
   './diff.worker.js?h=eeed30b0',
@@ -36,6 +36,21 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME)
+            .then(cache => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => caches.match(event.request)
+          .then(response => response || caches.match('./index.html')))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request)
       .then(response => response || fetch(event.request))
