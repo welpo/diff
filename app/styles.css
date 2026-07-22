@@ -1207,6 +1207,14 @@ tr.normalized td.ln {
   }
 }
 
+@media (max-width: 767px) {
+  #original,
+  #modified {
+    flex-grow: 0;
+    height: auto;
+  }
+}
+
 @media (max-width: 600px) {
   .mobile-only {
     display: block;

@@ -2,7 +2,7 @@ const CACHE_NAME = 'diff-cache-v1.0.0';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './styles.css?h=d49c4da8',
+  './styles.css?h=e5ef9486',
   './app.js?h=24423efd',
   './diff.js?h=52ba9aad',
   './diff.worker.js?h=eeed30b0',
