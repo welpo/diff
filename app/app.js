@@ -1,6 +1,8 @@
 import * as Diff from "./diff.js?h=52ba9aad";
 
-const diffWorker = new Worker("./diff.worker.js", { type: "module" });
+const diffWorker = new Worker("./diff.worker.js?h=fc319eb2", {
+  type: "module",
+});
 const originalInput = document.getElementById("original");
 const modifiedInput = document.getElementById("modified");
 const diffView = document.getElementById("output");
@@ -13,7 +15,12 @@ const editBtn = document.getElementById("editBtn");
 const compareBtn = document.getElementById("compareBtn");
 const unifiedBtn = document.getElementById("btnUnified");
 const sideBySideBtn = document.getElementById("btnSideBySide");
+const gridBtn = document.getElementById("btnGrid");
+const textBtn = document.getElementById("btnText");
+const contentModeToggle = document.getElementById("contentModeToggle");
+const textViewToggle = document.getElementById("textViewToggle");
 const patchDropdown = document.getElementById("patchDropdown");
+const patchTools = document.getElementById("patchTools");
 const patchFilenameInput = document.getElementById("patchFilename");
 const patchConfirmBtn = document.getElementById("patchConfirmBtn");
 const normalizeBtn = document.getElementById("normalizeBtn");
@@ -33,6 +40,9 @@ const minimapViewport = document.getElementById("minimapViewport");
 const leftPills = document.getElementById("leftPills");
 const rightPills = document.getElementById("rightPills");
 const diffNameInput = document.getElementById("diffName");
+const changeList = document.getElementById("changeList");
+const changeListCount = document.getElementById("changeListCount");
+const changeListBody = document.getElementById("changeListBody");
 
 const STORAGE_KEY = "diffSettings";
 const MIN_COLLAPSE_LINES = 5;
@@ -53,6 +63,9 @@ const COLLAPSE_UP_ICON =
 
 let isComputing = false;
 let currentDiff = null;
+let currentDiffCache = { text: null, grid: null };
+let contentMode = "text";
+let gridDetection = { available: false };
 let ignoreOptions = {
   trailing: false,
   amount: false,
@@ -81,6 +94,7 @@ function applySettings() {
   sideBySideBtn.classList.toggle("active", currentView === "sbs");
   unifiedBtn.setAttribute("aria-pressed", currentView === "unified");
   sideBySideBtn.setAttribute("aria-pressed", currentView === "sbs");
+  updateContentModeControls();
 }
 
 const DEFAULT_TITLE = document.title;
@@ -111,14 +125,31 @@ function hasActiveNormalization() {
   );
 }
 
+function updateContentModeControls() {
+  const hasGrid = !!gridDetection.available;
+  document.body.classList.toggle("grid-view", contentMode === "grid");
+  contentModeToggle.classList.toggle("hidden", !hasGrid);
+  gridBtn.classList.toggle("active", contentMode === "grid");
+  textBtn.classList.toggle("active", contentMode === "text");
+  gridBtn.setAttribute("aria-pressed", contentMode === "grid");
+  textBtn.setAttribute("aria-pressed", contentMode === "text");
+  textViewToggle.classList.toggle("hidden", contentMode === "grid");
+  patchTools.classList.toggle("hidden", contentMode === "grid");
+}
+
 async function loadFromUrl() {
   const hash = location.hash.slice(1);
   if (!hash) {
     currentDiff = null;
+    currentDiffCache = { text: null, grid: null };
+    contentMode = "text";
+    gridDetection = { available: false };
     diffName = "";
     diffNameInput.value = "";
+    hideChangeList();
     updateDocumentTitle();
     updateUrlWarning();
+    updateContentModeControls();
     setInputMode();
     return;
   }
@@ -132,7 +163,9 @@ async function loadFromUrl() {
     ignoreTrailingCheckbox.disabled = ignoreOptions.all;
     ignoreAmountCheckbox.disabled = ignoreOptions.all;
     normalizeBtn.classList.toggle("has-active", hasActiveNormalization());
-    const { a, b, n } = JSON.parse(await decompress(fromBase64Url(hash)));
+    const { a, b, n, v } = JSON.parse(
+      await decompress(fromBase64Url(hash)),
+    );
     diffName = n || "";
     diffNameInput.value = diffName;
     updateDocumentTitle();
@@ -140,7 +173,10 @@ async function loadFromUrl() {
     modifiedInput.value = b;
     updateCompareBtn();
     setComputingState(true);
-    currentDiff = await runDiffWorker(a, b, ignoreOptions);
+    currentDiffCache = { text: null, grid: null };
+    applyDiffResponse(
+      await runDiffWorker(a, b, ignoreOptions, v || "auto"),
+    );
     setComputingState(false);
     setViewerMode();
     rerender();
@@ -221,29 +257,49 @@ function setComputingState(computing) {
   }
 }
 
-function runDiffWorker(original, modified, options) {
+function runDiffWorker(original, modified, options, mode = "auto") {
   return new Promise((resolve, reject) => {
     const handler = (event) => {
       diffWorker.removeEventListener("message", handler);
-      if (event.data.status === "ok") resolve(event.data.result);
+      if (event.data.status === "ok") resolve(event.data);
       else reject(new Error(event.data.error));
     };
     diffWorker.addEventListener("message", handler);
-    diffWorker.postMessage({ action: "diff", original, modified, options });
+    diffWorker.postMessage({
+      action: "diff",
+      original,
+      modified,
+      options,
+      mode,
+    });
   });
+}
+
+function applyDiffResponse(response) {
+  currentDiff = response.result;
+  contentMode = response.mode;
+  gridDetection = response.detection;
+  currentDiffCache[contentMode] = currentDiff;
+  updateContentModeControls();
 }
 
 function setViewerMode() {
   document.body.classList.remove("editing");
   document.body.classList.add("viewer");
   diffView.scrollTop = 0;
+  changeList.open = false;
 }
 
 function rerender() {
   if (!currentDiff) return;
-  currentView === "sbs"
-    ? renderSideBySide(currentDiff)
-    : renderUnified(currentDiff);
+  if (contentMode === "grid") {
+    renderGrid(currentDiff);
+  } else {
+    currentView === "sbs"
+      ? renderSideBySide(currentDiff)
+      : renderUnified(currentDiff);
+    hideChangeList();
+  }
   changeRows = getChangeRows();
   currentChangeIndex = -1;
   requestAnimationFrame(renderMinimap);
@@ -408,6 +464,91 @@ function truncate(s, len = TRUNCATE_LEN) {
   return escapeHtml(s.slice(0, len)) + "…";
 }
 
+function displayGridValue(value) {
+  return value === ""
+    ? '<span class="grid-empty">empty</span>'
+    : escapeHtml(value);
+}
+
+function renderGrid(diff) {
+  const rows = [
+    '<table class="grid-table"><thead><tr><th class="grid-corner" aria-label="Cell coordinates"></th>',
+  ];
+  for (let col = 0; col < diff.cols; col++) {
+    rows.push(`<th class="grid-col-header" scope="col">${gridColLabel(col)}</th>`);
+  }
+  rows.push("</tr></thead><tbody>");
+  let changeId = 0;
+  for (let row = 0; row < diff.rows; row++) {
+    rows.push(
+      `<tr><th class="grid-row-header" scope="row">${row + 1}</th>`,
+    );
+    for (const cell of diff.cells[row]) {
+      const isChange = cell.type !== "same";
+      const classes = ["grid-cell", `grid-${cell.type}`];
+      if (cell.normalized) classes.push("grid-normalized");
+      let content = displayGridValue(cell.b);
+      if (cell.type === "changed") {
+        content = `<div class="grid-cell-diff"><span class="grid-old">${displayGridValue(cell.a)}</span><span class="grid-new">${displayGridValue(cell.b)}</span></div>`;
+      } else if (cell.type === "cleared") {
+        content = `<span class="grid-old">${displayGridValue(cell.a)}</span>`;
+      } else if (cell.type === "filled") {
+        content = `<span class="grid-new">${displayGridValue(cell.b)}</span>`;
+      }
+      const changeAttr = isChange
+        ? ` data-change-group="${changeId++}"`
+        : "";
+      const title = cell.normalized
+        ? ' title="Difference ignored by normalization settings"'
+        : "";
+      rows.push(
+        `<td class="${classes.join(" ")}" data-cell-ref="${cell.ref}"${changeAttr}${title}>${content}</td>`,
+      );
+    }
+    rows.push("</tr>");
+  }
+  rows.push("</tbody></table>");
+  diffView.className = "diff grid-diff";
+  diffView.innerHTML = rows.join("");
+  renderChangeList(diff);
+}
+
+function gridColLabel(index) {
+  let n = index;
+  let label = "";
+  do {
+    label = String.fromCharCode(65 + (n % 26)) + label;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return label;
+}
+
+function renderChangeList(diff) {
+  if (diff.changes.length === 0) {
+    hideChangeList();
+    return;
+  }
+  changeList.classList.remove("hidden");
+  changeListCount.textContent = `${diff.changes.length.toLocaleString()} · ${diff.formatLabel}`;
+  const labels = {
+    filled: "Filled",
+    cleared: "Cleared",
+    changed: "Changed",
+  };
+  changeListBody.innerHTML = diff.changes
+    .map(
+      (cell) =>
+        `<tr data-cell-ref="${cell.ref}"><th scope="row"><button type="button" class="cell-link">${cell.ref}</button></th><td><span class="change-kind change-kind-${cell.type}">${labels[cell.type]}</span></td><td>${displayGridValue(cell.a)}</td><td>${displayGridValue(cell.b)}</td></tr>`,
+    )
+    .join("");
+}
+
+function hideChangeList() {
+  changeList.classList.add("hidden");
+  changeList.open = false;
+  changeListBody.innerHTML = "";
+}
+
 function renderUnified(diff) {
   const segments = groupDiff(diff);
   segmentIdCounter = 0;
@@ -518,6 +659,10 @@ function getChangeRows() {
 }
 
 function renderMinimap() {
+  if (contentMode === "grid") {
+    renderGridMinimap();
+    return;
+  }
   const groupStarts = getChangeRows();
   const scrollHeight = diffView.scrollHeight;
   const containerRect = diffView.getBoundingClientRect();
@@ -585,6 +730,53 @@ function renderMinimap() {
   updateViewportIndicator();
 }
 
+function renderGridMinimap() {
+  const changes = getChangeRows();
+  const scrollHeight = diffView.scrollHeight;
+  const containerRect = diffView.getBoundingClientRect();
+  if (
+    changes.length === 0 ||
+    scrollHeight === 0 ||
+    containerRect.height === 0
+  ) {
+    minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+    updateViewportIndicator();
+    return;
+  }
+  const dpr = window.devicePixelRatio || 1;
+  const width = minimap.clientWidth;
+  const height = minimap.clientHeight;
+  minimapCanvas.width = width * dpr;
+  minimapCanvas.height = height * dpr;
+  minimapCtx.scale(dpr, dpr);
+  const styles = getComputedStyle(document.documentElement);
+  const delColor = styles.getPropertyValue("--stat-del").trim();
+  const addColor = styles.getPropertyValue("--stat-add").trim();
+  minimapCtx.clearRect(0, 0, width, height);
+  minimapCtx.globalAlpha = 0.85;
+  for (const cell of changes) {
+    const rect = cell.getBoundingClientRect();
+    const top =
+      ((rect.top - containerRect.top + diffView.scrollTop) / scrollHeight) *
+      height;
+    const markerHeight = Math.max(3, (rect.height / scrollHeight) * height);
+    if (cell.classList.contains("grid-cleared")) {
+      minimapCtx.fillStyle = delColor;
+      minimapCtx.fillRect(0, top, width, markerHeight);
+    } else if (cell.classList.contains("grid-filled")) {
+      minimapCtx.fillStyle = addColor;
+      minimapCtx.fillRect(0, top, width, markerHeight);
+    } else {
+      minimapCtx.fillStyle = delColor;
+      minimapCtx.fillRect(0, top, width / 2, markerHeight);
+      minimapCtx.fillStyle = addColor;
+      minimapCtx.fillRect(width / 2, top, width / 2, markerHeight);
+    }
+  }
+  minimapCtx.globalAlpha = 1;
+  updateViewportIndicator();
+}
+
 function updateViewportIndicator() {
   const scrollHeight = diffView.scrollHeight;
   if (scrollHeight === 0) return;
@@ -622,6 +814,10 @@ function getContiguousRuns(rows) {
 
 function updateStats() {
   if (!currentDiff) return;
+  if (contentMode === "grid") {
+    updateGridStats(currentDiff);
+    return;
+  }
   let adds = 0,
     dels = 0,
     changes = 0;
@@ -685,6 +881,28 @@ function updateStats() {
   }
 }
 
+function updateGridStats(diff) {
+  const { filled, cleared, changed } = diff.stats;
+  const totalChanges = filled + cleared + changed;
+  downloadPatchBtn.disabled = true;
+  downloadPatchBtn.setAttribute("aria-disabled", "true");
+  if (totalChanges === 0) {
+    const normalizedHint =
+      diff.stats.normalized > 0
+        ? ` <span class="normalized-hint">(${diff.stats.normalized.toLocaleString()} differences ignored)</span>`
+        : "";
+    changeSummary.innerHTML = `<div class="identical-msg">✔ The two grids are identical.${normalizedHint}</div>`;
+    changeSummary.classList.add("visible");
+    changeSummarySplit.classList.remove("visible");
+    return;
+  }
+  const dimensions = (rows, cols) =>
+    `<span class="lines"><span class="separator">•</span>${rows}×${cols}</span>`;
+  leftPills.innerHTML = `<span class="pill del"><span class="label">−${(cleared + changed).toLocaleString()}<span class="desktop-only"> cells</span></span>${dimensions(diff.originalRows, diff.originalCols)}</span>`;
+  rightPills.innerHTML = `<span class="pill add"><span class="label">+${(filled + changed).toLocaleString()}<span class="desktop-only"> cells</span></span>${dimensions(diff.modifiedRows, diff.modifiedCols)}</span>`;
+  updateStatsVisibility(true);
+}
+
 function updateStatsVisibility(hasChanges) {
   const isIdentical = currentDiff && currentDiff.length > 0 && !hasChanges;
   if (isIdentical) {
@@ -706,8 +924,9 @@ async function computeDiff() {
   const a = originalInput.value,
     b = modifiedInput.value;
   setComputingState(true);
+  currentDiffCache = { text: null, grid: null };
   try {
-    currentDiff = await runDiffWorker(a, b, ignoreOptions);
+    applyDiffResponse(await runDiffWorker(a, b, ignoreOptions, "auto"));
   } catch (e) {
     console.error("Diff failed:", e);
     setComputingState(false);
@@ -717,13 +936,26 @@ async function computeDiff() {
   setViewerMode();
   rerender();
   updateStats();
-  const data = JSON.stringify({ a, b, ...(diffName && { n: diffName }) });
+  await writeDiffUrl(true);
+}
+
+async function writeDiffUrl(push = false) {
+  const a = originalInput.value,
+    b = modifiedInput.value;
+  const data = JSON.stringify({
+    a,
+    b,
+    ...(diffName && { n: diffName }),
+    ...(gridDetection.available && { v: contentMode }),
+  });
   const encoded = toBase64Url(await compress(data));
   const flags = ignoreOptionsToFlags(ignoreOptions);
   const query = flags ? `?i=${flags}` : "";
   const newUrl = query + "#" + encoded;
-  if (newUrl !== location.search + location.hash)
-    history.pushState(null, "", newUrl);
+  if (newUrl !== location.search + location.hash) {
+    const method = push ? "pushState" : "replaceState";
+    history[method](null, "", newUrl);
+  }
   updateUrlWarning();
 }
 
@@ -756,6 +988,7 @@ function goToChange(delta) {
   changeRows[currentChangeIndex].scrollIntoView({
     behavior: "smooth",
     block: "center",
+    inline: contentMode === "grid" ? "center" : "nearest",
   });
 }
 
@@ -858,11 +1091,15 @@ async function updateNormOpts() {
   saveSettings();
   if (currentDiff && !isComputing) {
     setComputingState(true);
+    currentDiffCache = { text: null, grid: null };
     try {
-      currentDiff = await runDiffWorker(
-        originalInput.value,
-        modifiedInput.value,
-        ignoreOptions,
+      applyDiffResponse(
+        await runDiffWorker(
+          originalInput.value,
+          modifiedInput.value,
+          ignoreOptions,
+          contentMode,
+        ),
       );
     } catch (e) {
       console.error("Diff failed:", e);
@@ -872,10 +1109,7 @@ async function updateNormOpts() {
     setComputingState(false);
     rerender();
     updateStats();
-    const flags = ignoreOptionsToFlags(ignoreOptions);
-    const query = flags ? `?i=${flags}` : "";
-    history.replaceState(null, "", location.pathname + query + location.hash);
-    updateUrlWarning();
+    await writeDiffUrl();
   }
 }
 
@@ -893,6 +1127,7 @@ function saveSettings() {
 const toggleView = () => setView(currentView === "unified" ? "sbs" : "unified");
 
 function setView(view) {
+  if (contentMode !== "text") return;
   currentView = view;
   unifiedBtn.classList.toggle("active", view === "unified");
   sideBySideBtn.classList.toggle("active", view === "sbs");
@@ -907,6 +1142,40 @@ function setView(view) {
     }
     updateStatsVisibility(totalChanges > 0);
   }
+}
+
+async function setContentMode(mode) {
+  if (
+    isComputing ||
+    mode === contentMode ||
+    (mode === "grid" && !gridDetection.available)
+  )
+    return;
+  setComputingState(true);
+  try {
+    if (currentDiffCache[mode]) {
+      currentDiff = currentDiffCache[mode];
+      contentMode = mode;
+      updateContentModeControls();
+    } else {
+      applyDiffResponse(
+        await runDiffWorker(
+          originalInput.value,
+          modifiedInput.value,
+          ignoreOptions,
+          mode,
+        ),
+      );
+    }
+  } catch (e) {
+    console.error("Diff failed:", e);
+    setComputingState(false);
+    return;
+  }
+  setComputingState(false);
+  rerender();
+  updateStats();
+  await writeDiffUrl();
 }
 
 async function copySideText(side) {
@@ -1028,6 +1297,8 @@ clearModifiedBtn.addEventListener("click", () => {
   modifiedInput.focus();
 });
 editBtn.addEventListener("click", setInputMode);
+gridBtn.addEventListener("click", () => setContentMode("grid"));
+textBtn.addEventListener("click", () => setContentMode("text"));
 unifiedBtn.addEventListener("click", toggleView);
 sideBySideBtn.addEventListener("click", toggleView);
 copyOriginalBtn.addEventListener("click", () => copySideText("left"));
@@ -1057,6 +1328,18 @@ diffView.addEventListener("click", (e) => {
     } else {
       toggleExpanded(parseInt(row.dataset.collapseId, 10));
     }
+  }
+});
+changeList.addEventListener("click", (e) => {
+  const row = e.target.closest("tr[data-cell-ref]");
+  if (!row) return;
+  const cell = diffView.querySelector(
+    `[data-cell-ref="${CSS.escape(row.dataset.cellRef)}"]`,
+  );
+  if (cell) {
+    cell.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    cell.classList.remove("grid-cell-pulse");
+    requestAnimationFrame(() => cell.classList.add("grid-cell-pulse"));
   }
 });
 diffView.addEventListener("scroll", updateViewportIndicator, { passive: true });
@@ -1126,16 +1409,7 @@ diffNameInput.addEventListener("keydown", (e) => {
 });
 diffNameInput.addEventListener("blur", async () => {
   if (!currentDiff) return;
-  const a = originalInput.value,
-    b = modifiedInput.value;
-  const data = JSON.stringify({ a, b, ...(diffName && { n: diffName }) });
-  const encoded = toBase64Url(await compress(data));
-  const flags = ignoreOptionsToFlags(ignoreOptions);
-  const query = flags ? `?i=${flags}` : "";
-  const newUrl = query + "#" + encoded;
-  if (newUrl !== location.search + location.hash)
-    history.replaceState(null, "", newUrl);
-  updateUrlWarning();
+  await writeDiffUrl();
 });
 setupDragDrop(originalInput);
 setupDragDrop(modifiedInput);

@@ -23,6 +23,7 @@ A privacy-focused diff tool. Paste two texts, see what changed. No accounts, no 
 - No server; everything runs locally in the browser
 - Share via URL: diffs are compressed and encoded in the URL
 - Works offline as an installable PWA
+- Spreadsheet grid comparison for TSV, CSV, and semicolon-separated data
 - Minimap: visual overview for navigating large diffs
 - Drag and drop files directly into the text areas
 - Download patch files compatible with `git apply`
@@ -49,6 +50,7 @@ The important files are:
 
 - `app.js`: UI logic and event handling
 - `diff.js`: diff algorithms (Myers, Patience) and patch generation
+- `grid.js`: TSV/CSV parsing, detection, and cell-level grid diffs
 - `diff.worker.js`: Web Worker for off-main-thread diffing
 - `styles.css`: styles
 - `index.html`: structure
@@ -63,6 +65,7 @@ node --test tests/*.mjs
 
 - `patch.test.mjs`: verifies generated patches can be applied with `git apply`. Each test case in `tests/cases/` has an `original.txt` and `modified.txt`.
 - `normalization.test.mjs`: tests whitespace/quote normalization logic.
+- `grid.test.mjs`: delimited parsing, detection confidence, and grid cell classification.
 
 ## Need help?
 

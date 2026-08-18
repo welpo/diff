@@ -6,6 +6,7 @@ const ASSETS_TO_CACHE = [
   './app.js?h=24423efd',
   './diff.js?h=52ba9aad',
   './diff.worker.js?h=eeed30b0',
+  './grid.js?h=a91e6c44',
   './manifest.json?h=2c311878',
   './sw-registration.js?h=bfa8fde5',
   './icon-192x192.png',

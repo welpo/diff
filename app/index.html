@@ -68,7 +68,11 @@
           </button>
         </div>
         <div class="toolbar-group toolbar-group-view">
-          <div class="view-toggle glass" role="group" aria-label="View mode">
+          <div class="view-toggle glass hidden" id="contentModeToggle" role="group" aria-label="Content mode">
+            <button type="button" class="toggle-btn" id="btnGrid" aria-pressed="false">Grid</button>
+            <button type="button" class="toggle-btn active" id="btnText" aria-pressed="true">Text</button>
+          </div>
+          <div class="view-toggle glass" id="textViewToggle" role="group" aria-label="Text layout">
             <button type="button" class="toggle-btn" id="btnUnified" aria-pressed="false">Unified</button>
             <button type="button" class="toggle-btn active" id="btnSideBySide" aria-pressed="true">Split</button>
           </div>
@@ -87,7 +91,7 @@
           </div>
         </div>
         <div class="toolbar-group toolbar-group-actions">
-          <div class="dropdown-container">
+          <div class="dropdown-container" id="patchTools">
             <button id="downloadPatchBtn" class="btn-secondary glass" aria-expanded="false" aria-controls="patchDropdown">
               <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.75 14A1.75 1.75 0 011 12.25v-2.5a.75.75 0 011.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 00.25-.25v-2.5a.75.75 0 011.5 0v2.5A1.75 1.75 0 0113.25 14H2.75z"/><path d="M7.25 7.689V2a.75.75 0 011.5 0v5.689l1.97-1.969a.749.749 0 111.06 1.06l-3.25 3.25a.749.749 0 01-1.06 0L4.22 6.78a.749.749 0 111.06-1.06l1.97 1.969z"/></svg>
               <span class="btn-label">Download .patch</span>
@@ -147,6 +151,25 @@
         </button>
       </div>
     </div>
+    <details class="change-list glass hidden" id="changeList">
+      <summary>
+        <span>Cell changes</span>
+        <span class="change-list-count" id="changeListCount"></span>
+      </summary>
+      <div class="change-list-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Cell</th>
+              <th>Change</th>
+              <th>Original</th>
+              <th>Modified</th>
+            </tr>
+          </thead>
+          <tbody id="changeListBody"></tbody>
+        </table>
+      </div>
+    </details>
     <div class="diff-wrapper">
       <div class="diff" id="output"></div>
       <div class="minimap" id="minimap">

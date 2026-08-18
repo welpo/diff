@@ -29,6 +29,7 @@ APP_FILES_TO_CACHEBUST=(
     "app.js"
     "diff.js"
     "diff.worker.js"
+    "grid.js"
     "styles.css"
     "sw-registration.js"
     "manifest.json"
@@ -42,6 +43,7 @@ APP_JS_IMPORTS=(
 # Files imported by diff.worker.js.
 WORKER_IMPORTS=(
     "diff.js"
+    "grid.js"
 )
 
 # Check if oxipng is installed.
@@ -54,6 +56,37 @@ fi
 
 # Get newly added and modified files.
 mapfile -t all_changed_files < <(git diff --cached --name-only --diff-filter=d)
+
+# Process cache-busted dependencies before the files that import them.
+ordered_changed_files=()
+needs_worker=false
+needs_app=false
+for file in "${all_changed_files[@]}"; do
+    case "$file" in
+        app/diff.js|app/grid.js)
+            ordered_changed_files+=("$file")
+            needs_worker=true
+            needs_app=true
+            ;;
+        app/diff.worker.js)
+            needs_worker=true
+            needs_app=true
+            ;;
+        app/app.js)
+            needs_app=true
+            ;;
+        *)
+            ordered_changed_files+=("$file")
+            ;;
+    esac
+done
+if [[ "$needs_worker" == true ]]; then
+    ordered_changed_files+=("app/diff.worker.js")
+fi
+if [[ "$needs_app" == true ]]; then
+    ordered_changed_files+=("app/app.js")
+fi
+all_changed_files=("${ordered_changed_files[@]}")
 
 script_name=$(basename "$0")
 # Loop through all newly added or modified files.
@@ -100,6 +133,13 @@ for file in "${all_changed_files[@]}"; do
             perl -pi -e "s|from \"./${base_name}(?:\\?[^\"]*)?\"|from \"./${base_name}?h=${new_hash}\"|g" "app/app.js"
             git add "app/app.js"
             echo "Updated app.js import for $base_name with hash $new_hash"
+        fi
+
+        # Update the worker URL constructed in app.js.
+        if [[ "$base_name" == "diff.worker.js" ]]; then
+            perl -pi -e "s|new Worker\\(\"./${base_name}(?:\\?[^\"]*)?\"|new Worker(\"./${base_name}?h=${new_hash}\"|g" "app/app.js"
+            git add "app/app.js"
+            echo "Updated app.js worker URL for $base_name with hash $new_hash"
         fi
 
         # Update import in diff.worker.js for files it imports.
