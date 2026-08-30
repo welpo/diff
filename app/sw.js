@@ -1,14 +1,15 @@
 // GENERATED BLOCK: written by .githooks/pre-commit, do not edit by hand.
-const CACHE_NAME = 'kawari-887bb28e';
+const CACHE_NAME = 'kawari-fc0d97f6';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './diff.js?h=52ba9aad',
   './grid.js?h=611eb787',
-  './styles.css?h=a999d490',
+  './toast.js?h=9e676138',
+  './styles.css?h=480ca582',
   './manifest.json?h=2c311878',
   './diff.worker.js?h=e7b50a1c',
-  './sw-registration.js?h=bfa8fde5',
+  './sw-registration.js?h=e8087479',
   './app.js?h=a4c3f98c',
   './icon-192x192.png',
   './icon-512x512.png',

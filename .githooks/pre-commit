@@ -29,6 +29,7 @@ function has_unstaged_changes() {
 HASHED_ASSETS=(
     "diff.js"
     "grid.js"
+    "toast.js"
     "styles.css"
     "manifest.json"
     "diff.worker.js"

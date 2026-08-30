@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const HASHED_ASSETS = [
   'diff.js',
   'grid.js',
+  'toast.js',
   'styles.css',
   'manifest.json',
   'diff.worker.js',

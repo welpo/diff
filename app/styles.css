@@ -1617,3 +1617,102 @@ tr.normalized td.ln {
     border-left: 3px solid var(--diff-norm-indicator);
   }
 }
+
+/* Toast ~ transient status pill, dropped from the top edge. */
+.toast {
+  display: flex;
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  align-items: center;
+  gap: 8px;
+  z-index: 1000;
+  transform: translate(-50%, calc(-100% - 24px));
+  transition: transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.2), opacity 0.32s ease;
+  opacity: 0;
+  box-shadow: var(--shadow-glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  cursor: pointer;
+  pointer-events: none;
+  margin: 0;
+  padding: 9px 16px 9px 13px;
+  max-width: min(90vw, 420px);
+  width: max-content;
+  height: auto;
+  inset-inline-end: auto;
+  inset-block-end: auto;
+  overflow: visible;
+  color: var(--color-text);
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
+.toast-visible {
+  transform: translate(-50%, 0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.toast-actionable {
+  cursor: default;
+  padding-right: 8px;
+}
+
+.toast-icon {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.toast-icon svg {
+  fill: var(--stat-add);
+  width: 16px;
+  height: 16px;
+}
+
+.toast-action,
+.toast-dismiss {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+
+.toast-action {
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.toast-dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  padding: 0;
+  width: 22px;
+  height: 22px;
+  color: var(--color-text-light);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.toast-dismiss:hover {
+  background: var(--color-accent-light);
+  color: var(--color-text);
+}
+
+.toast-action[hidden],
+.toast-dismiss[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transform: translate(-50%, 0);
+    transition: opacity 0.2s ease;
+  }
+}
