@@ -1,5 +1,5 @@
 import { lineDiff } from "./diff.js?h=52ba9aad";
-import { detectDelimitedPair, gridDiff } from "./grid.js?h=a91e6c44";
+import { detectDelimitedPair, gridDiff } from "./grid.js?h=611eb787";
 
 onmessage = (event) => {
   const { action, original, modified, options, mode = "auto" } = event.data;

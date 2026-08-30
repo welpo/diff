@@ -1,19 +1,21 @@
-const CACHE_NAME = 'diff-cache-v1.0.1';
+// GENERATED BLOCK: written by .githooks/pre-commit, do not edit by hand.
+const CACHE_NAME = 'kawari-887bb28e';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './styles.css?h=85bf58d9',
-  './app.js?h=24423efd',
   './diff.js?h=52ba9aad',
-  './diff.worker.js?h=eeed30b0',
-  './grid.js?h=a91e6c44',
+  './grid.js?h=611eb787',
+  './styles.css?h=a999d490',
   './manifest.json?h=2c311878',
+  './diff.worker.js?h=e7b50a1c',
   './sw-registration.js?h=bfa8fde5',
+  './app.js?h=a4c3f98c',
   './icon-192x192.png',
   './icon-512x512.png',
   './apple-touch-icon.png',
   './favicon.ico'
 ];
+// END GENERATED BLOCK
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -41,9 +43,11 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(event.request)
         .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME)
-            .then(cache => cache.put(event.request, copy));
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME)
+              .then(cache => cache.put(event.request, copy));
+          }
           return response;
         })
         .catch(() => caches.match(event.request)

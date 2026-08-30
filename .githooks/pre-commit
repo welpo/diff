@@ -24,26 +24,33 @@ function has_unstaged_changes() {
     [[ -n $(git diff -- "$file") ]]
 }
 
-# Files to watch for cache busting (relative to app/).
-APP_FILES_TO_CACHEBUST=(
-    "app.js"
+# Precached assets served with a ?h= hash, in dependency order: an asset is
+# hashed only once every asset it references has its final hash.
+HASHED_ASSETS=(
     "diff.js"
-    "diff.worker.js"
     "grid.js"
     "styles.css"
-    "sw-registration.js"
     "manifest.json"
+    "diff.worker.js"
+    "sw-registration.js"
+    "app.js"
 )
 
-# Files imported by app.js (need to update import statement when changed).
-APP_JS_IMPORTS=(
-    "diff.js"
+# Precached assets served at a stable URL. Their contents still feed CACHE_NAME.
+UNHASHED_ASSETS=(
+    "index.html"
+    "icon-192x192.png"
+    "icon-512x512.png"
+    "apple-touch-icon.png"
+    "favicon.ico"
 )
 
-# Files imported by diff.worker.js.
-WORKER_IMPORTS=(
-    "diff.js"
-    "grid.js"
+# Files carrying ?h= references to rewrite.
+REFERRING_FILES=(
+    "app/index.html"
+    "app/app.js"
+    "app/diff.worker.js"
+    "app/sw-registration.js"
 )
 
 # Check if oxipng is installed.
@@ -54,47 +61,18 @@ elif command -v optipng &> /dev/null; then
     png_compressor="optipng -o 7"
 fi
 
-# Get newly added and modified files.
-mapfile -t all_changed_files < <(git diff --cached --name-only --diff-filter=d)
-
-# Process cache-busted dependencies before the files that import them.
-ordered_changed_files=()
-needs_worker=false
-needs_app=false
-for file in "${all_changed_files[@]}"; do
-    case "$file" in
-        app/diff.js|app/grid.js)
-            ordered_changed_files+=("$file")
-            needs_worker=true
-            needs_app=true
-            ;;
-        app/diff.worker.js)
-            needs_worker=true
-            needs_app=true
-            ;;
-        app/app.js)
-            needs_app=true
-            ;;
-        *)
-            ordered_changed_files+=("$file")
-            ;;
-    esac
-done
-if [[ "$needs_worker" == true ]]; then
-    ordered_changed_files+=("app/diff.worker.js")
-fi
-if [[ "$needs_app" == true ]]; then
-    ordered_changed_files+=("app/app.js")
-fi
-all_changed_files=("${ordered_changed_files[@]}")
+mapfile -t all_changed_files < <(git diff --cached --name-only)
 
 script_name=$(basename "$0")
-# Loop through all newly added or modified files.
 for file in "${all_changed_files[@]}"; do
     file_name=$(basename "$file")
 
     # Ignore this script and the changelog.
     if [[ "$file_name" == "$script_name" ]] || [[ "$file_name" == "CHANGELOG.md" ]]; then
+        continue
+    fi
+
+    if ! git cat-file -e ":$file" 2>/dev/null; then
         continue
     fi
 
@@ -109,44 +87,75 @@ for file in "${all_changed_files[@]}"; do
     if contains_todo "$file"; then
         error_exit "File $file contains TODO! Remove or complete the TODO before committing."
     fi
+done
 
-    if has_unstaged_changes "app/index.html"; then
-        error_exit "index.html has unstaged changes. Commit or stash them before proceeding."
+app_files_staged=false
+for file in "${all_changed_files[@]}"; do
+    [[ "$file" == app/* ]] && app_files_staged=true && break
+done
+if [[ "$app_files_staged" == false ]]; then
+    exit 0
+fi
+
+protected_files=("${REFERRING_FILES[@]}" "app/sw.js")
+for asset in "${HASHED_ASSETS[@]}" "${UNHASHED_ASSETS[@]}"; do
+    protected_files+=("app/$asset")
+done
+
+for file in "${protected_files[@]}"; do
+    if has_unstaged_changes "$file"; then
+        error_exit "$file has unstaged changes. Commit or stash them before proceeding."
     fi
+done
 
-    # Update cache busting ?urls in index.html.
-    file_without_prefix=${file#app/}
-    if [[ " ${APP_FILES_TO_CACHEBUST[*]} " =~ ${file_without_prefix} ]]; then
-        new_hash=$(get_file_hash "$file")
-        base_name=$(basename "$file")
-        perl -pi -e "s|${base_name}\\?[^\"]*\"|${base_name}?h=${new_hash}\"|g; s|${base_name}\"|${base_name}?h=${new_hash}\"|g" "app/index.html"
-        git add "app/index.html"
-        echo "Updated cache bust hash for $file to $new_hash"
+# Refresh every ?h= reference.
+fingerprint=""
+declare -A asset_hashes
+for asset in "${HASHED_ASSETS[@]}"; do
+    [[ -f "app/$asset" ]] || error_exit "Precached asset app/$asset is missing."
+    hash=$(get_file_hash "app/$asset")
+    asset_hashes["$asset"]=$hash
+    fingerprint+="$asset:$hash"$'\n'
+    for referrer in "${REFERRING_FILES[@]}"; do
+        perl -0777 -pi -e "s{([\"'])((?:\./)?)\Q$asset\E(?:\?h=[0-9a-f]{8})?\1}{\${1}\${2}$asset?h=$hash\${1}}g" "$referrer" \
+            || error_exit "Failed to rewrite $asset references in $referrer"
+    done
+done
 
-        # Update service worker cache list with versioned URLs.
-        perl -pi -e "s|'./${base_name}(?:\\?[^']*)?'|'./${base_name}?h=${new_hash}'|g" "app/sw.js"
-        git add "app/sw.js"
-        echo "Updated sw.js cache for $base_name with hash $new_hash"
+for asset in "${UNHASHED_ASSETS[@]}"; do
+    [[ -f "app/$asset" ]] || error_exit "Precached asset app/$asset is missing."
+    fingerprint+="$asset:$(get_file_hash "app/$asset")"$'\n'
+done
 
-        # Update import in app.js for files it imports.
-        if [[ " ${APP_JS_IMPORTS[*]} " =~ " ${base_name} " ]]; then
-            perl -pi -e "s|from \"./${base_name}(?:\\?[^\"]*)?\"|from \"./${base_name}?h=${new_hash}\"|g" "app/app.js"
-            git add "app/app.js"
-            echo "Updated app.js import for $base_name with hash $new_hash"
-        fi
+# CACHE_NAME changes whenever any precached asset does, which is what lets the
+# activate handler in sw.js delete the previous version's cache.
+if command -v md5sum >/dev/null 2>&1; then
+    cache_name="kawari-$(printf '%s' "$fingerprint" | md5sum | cut -d' ' -f1 | head -c 8)"
+else
+    cache_name="kawari-$(printf '%s' "$fingerprint" | md5 -q | head -c 8)"
+fi
 
-        # Update the worker URL constructed in app.js.
-        if [[ "$base_name" == "diff.worker.js" ]]; then
-            perl -pi -e "s|new Worker\\(\"./${base_name}(?:\\?[^\"]*)?\"|new Worker(\"./${base_name}?h=${new_hash}\"|g" "app/app.js"
-            git add "app/app.js"
-            echo "Updated app.js worker URL for $base_name with hash $new_hash"
-        fi
+manifest="  './',"$'\n'"  './index.html',"
+for asset in "${HASHED_ASSETS[@]}"; do
+    manifest+=$'\n'"  './$asset?h=${asset_hashes[$asset]}',"
+done
+for asset in "${UNHASHED_ASSETS[@]}"; do
+    [[ "$asset" == "index.html" ]] && continue
+    manifest+=$'\n'"  './$asset',"
+done
+manifest=${manifest%,}
 
-        # Update import in diff.worker.js for files it imports.
-        if [[ " ${WORKER_IMPORTS[*]} " =~ " ${base_name} " ]]; then
-            perl -pi -e "s|from \"./${base_name}(?:\\?[^\"]*)?\"|from \"./${base_name}?h=${new_hash}\"|g" "app/diff.worker.js"
-            git add "app/diff.worker.js"
-            echo "Updated diff.worker.js import for $base_name with hash $new_hash"
-        fi
-    fi
+generated="// GENERATED BLOCK: written by .githooks/pre-commit, do not edit by hand."$'\n'
+generated+="const CACHE_NAME = '$cache_name';"$'\n'
+generated+="const ASSETS_TO_CACHE = ["$'\n'
+generated+="$manifest"$'\n'
+generated+="];"$'\n'
+generated+="// END GENERATED BLOCK"
+
+SW_BLOCK="$generated" perl -0777 -pi -e \
+    's{// GENERATED BLOCK.*?// END GENERATED BLOCK}{$ENV{SW_BLOCK}}s or die "missing GENERATED BLOCK markers\n"' \
+    app/sw.js || error_exit "Failed to regenerate app/sw.js"
+
+for file in "${REFERRING_FILES[@]}" "app/sw.js"; do
+    git add "$file" || error_exit "Failed to stage $file"
 done

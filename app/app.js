@@ -1,6 +1,6 @@
 import * as Diff from "./diff.js?h=52ba9aad";
 
-const diffWorker = new Worker("./diff.worker.js?h=fc319eb2", {
+const diffWorker = new Worker("./diff.worker.js?h=e7b50a1c", {
   type: "module",
 });
 const originalInput = document.getElementById("original");
