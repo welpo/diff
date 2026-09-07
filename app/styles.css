@@ -65,6 +65,10 @@
   --glass-shine-1: rgba(255, 255, 255, 0.15);
   --glass-shine-2: rgba(255, 255, 255, 0.05);
 
+  --grid-row-stripe: color-mix(in srgb, var(--accent) 2.5%, var(--color-bg) 97.5%);
+  --grid-row-hover-line: 2px;
+  --grid-row-hover-bar: 4px;
+
   --border-radius: 14px;
   --border-radius-sm: 10px;
   --border-radius-xs: 8px;
@@ -86,6 +90,7 @@
     --color-bg-lighter: #242424;
     --color-border: rgba(255, 255, 255, 0.1);
     --color-accent-light: rgba(95, 158, 151, 0.15);
+    --grid-row-stripe: color-mix(in srgb, var(--accent) 3.5%, var(--color-bg) 96.5%);
     --hover-color: black;
     --success-bg: rgba(48, 209, 88, 0.15);
     --success-border: rgba(48, 209, 88, 0.3);
@@ -1228,7 +1233,45 @@ tr.normalized td.ln {
   z-index: 5;
 }
 
+.grid-table tbody tr:nth-child(even) {
+  background: var(--grid-row-stripe);
+}
+
+.grid-table tbody tr:nth-child(even) .grid-row-header {
+  background: color-mix(in srgb, var(--accent) 4%, var(--color-bg-light) 96%);
+}
+
+.grid-table tbody tr:hover > .grid-row-header::after,
+.grid-table tbody tr:hover > .grid-cell::after {
+  content: "";
+  position: absolute;
+  inset: 0 -1px;
+  z-index: 6;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--accent), var(--accent)) top / 100%
+      var(--grid-row-hover-line) no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom / 100%
+      var(--grid-row-hover-line) no-repeat;
+}
+
+.grid-table tbody tr:hover > .grid-row-header {
+  color: var(--accent);
+  background: var(--color-accent-light);
+}
+
+.grid-table tbody tr:hover > .grid-row-header::after {
+  background:
+    linear-gradient(var(--accent), var(--accent)) left / var(--grid-row-hover-bar)
+      100% no-repeat,
+    linear-gradient(var(--accent), var(--accent)) top / 100%
+      var(--grid-row-hover-line) no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom / 100%
+      var(--grid-row-hover-line) no-repeat;
+}
+
 .grid-cell {
+  position: relative;
   padding: 7px 10px;
   min-width: 120px;
   max-width: 360px;
